@@ -3,10 +3,9 @@ const { v4: uuidv4 } = require("uuid");
 const rooms = {};
 const MAX_PLAYERS = 4;
 
-
 /* ---------------- CREATE ROOM ---------------- */
 
-function createRoom(hostId, playerName) {
+function createRoom(hostId, playerName, sessionId) {
 
   const roomId = uuidv4().slice(0, 6).toUpperCase();
 
@@ -14,15 +13,25 @@ function createRoom(hostId, playerName) {
     id: hostId,
     name: playerName,
     score: 0,
+    roundScore: 0,
     mic: true,
     ready: false,
-    avatar: "/avatars/default.png",
-    isHost: true
+    isHost: true,
+    sessionId
   };
 
   rooms[roomId] = {
     roomId,
-    players: [player]
+    players: [player],
+    state: "WAITING",
+    gameState: "playing",
+    currentRound: 0,
+    totalRounds: 5,
+
+    game: {
+      mantriId: null,
+      chorId: null
+    }
   };
 
   return rooms[roomId];
@@ -31,31 +40,29 @@ function createRoom(hostId, playerName) {
 
 /* ---------------- JOIN ROOM ---------------- */
 
-function joinRoom(roomId, socketId, playerName) {
+function joinRoom(roomId, socketId, playerName, sessionId) {
 
   const room = rooms[roomId];
-
   if (!room) return null;
 
-  /* prevent duplicate joins */
+  if (room.players.length >= MAX_PLAYERS) return null;
 
-  const existing = room.players.find(p => p.id === socketId);
-  if (existing) return room;
-
-  /* prevent overflow */
-
-  if (room.players.length >= MAX_PLAYERS) {
-    return null;
+  const existingPlayer = room.players.find(player => player.sessionId === sessionId);
+  if (existingPlayer) {
+    existingPlayer.id = socketId;
+    existingPlayer.name = playerName;
+    return room;
   }
 
   const player = {
     id: socketId,
     name: playerName,
     score: 0,
+    roundScore: 0,
     mic: true,
     ready: false,
-    avatar: "/avatars/default.png",
-    isHost: false
+    isHost: false,
+    sessionId
   };
 
   room.players.push(player);
@@ -71,130 +78,115 @@ function getRoom(roomId) {
 }
 
 
-/* ---------------- GET PLAYER ---------------- */
+/* ---------------- UPDATE ROOM ---------------- */
 
-function getPlayer(roomId, socketId) {
+function updateRoom(roomId, updatedRoom) {
+  rooms[roomId] = updatedRoom;
+}
+
+
+/* ---------------- REATTACH PLAYER ---------------- */
+
+function syncPlayerSession({ roomId, previousSocketId, socketId, playerName, sessionId }) {
 
   const room = rooms[roomId];
   if (!room) return null;
 
-  return room.players.find(p => p.id === socketId);
+  let player = null;
 
-}
-
-
-/* ---------------- GET ROOM BY SOCKET ---------------- */
-
-function getRoomBySocket(socketId){
-
-  for(const roomId in rooms){
-
-    const room = rooms[roomId];
-
-    const exists = room.players.find(p => p.id === socketId);
-
-    if(exists) return roomId;
-
+  if (sessionId) {
+    player = room.players.find(p => p.sessionId === sessionId);
   }
 
-  return null;
+  if (!player && previousSocketId) {
+    player = room.players.find(p => p.id === previousSocketId);
+  }
 
-}
+  if (!player && playerName) {
+    player = room.players.find(p => p.name === playerName);
+  }
 
+  if (!player) return null;
 
-/* ---------------- GET ALL ROOMS ---------------- */
+  player.id = socketId;
+  player.sessionId = sessionId || player.sessionId;
 
-function getAllRooms() {
-  return rooms;
-}
+  if (playerName && !player.name) {
+    player.name = playerName;
+  }
 
-
-/* ---------------- TOGGLE MIC ---------------- */
-
-function toggleMic(id, roomId){
-
-  const player = getPlayer(roomId, id);
-  if (!player) return;
-
-  player.mic = !player.mic;
-
-}
-
-
-/* ---------------- UPDATE AVATAR ---------------- */
-
-function updateAvatar(id, roomId, avatar){
-
-  const player = getPlayer(roomId, id);
-  if (!player) return;
-
-  player.avatar = avatar;
-
+  return room;
 }
 
 
 /* ---------------- TOGGLE READY ---------------- */
 
-function toggleReady(id, roomId){
+function toggleReady(socketId, roomId) {
 
-  const player = getPlayer(roomId, id);
+  const room = rooms[roomId];
+  if (!room) return;
+
+  const player = room.players.find(p => p.id === socketId);
   if (!player) return;
 
   player.ready = !player.ready;
+}
 
+
+/* ---------------- TOGGLE MIC ---------------- */
+
+function toggleMic(socketId, roomId) {
+
+  const room = rooms[roomId];
+  if (!room) return;
+
+  const player = room.players.find(p => p.id === socketId);
+  if (!player) return;
+
+  player.mic = !player.mic;
 }
 
 
 /* ---------------- REMOVE PLAYER ---------------- */
 
-function removePlayer(socketId){
+function removePlayer(socketId) {
 
-  for(const roomId in rooms){
+  for (const roomId in rooms) {
 
     const room = rooms[roomId];
 
     const index = room.players.findIndex(p => p.id === socketId);
 
-    if(index !== -1){
+    if (index !== -1) {
 
       const wasHost = room.players[index].isHost;
 
-      room.players.splice(index,1);
+      room.players.splice(index, 1);
 
-      /* delete empty room */
-
-      if(room.players.length === 0){
+      if (room.players.length === 0) {
         delete rooms[roomId];
         return null;
       }
 
-      /* reassign host */
-
-      if(wasHost){
+      if (wasHost) {
         room.players[0].isHost = true;
       }
 
       return roomId;
-
     }
-
   }
 
   return null;
 }
 
 
-/* ---------------- EXPORT ---------------- */
-
 module.exports = {
   createRoom,
   joinRoom,
   getRoom,
-  getPlayer,
-  getRoomBySocket,
-  getAllRooms,
-  toggleMic,
-  updateAvatar,
+  updateRoom,
+  syncPlayerSession,
   toggleReady,
+  toggleMic,
   removePlayer
 };

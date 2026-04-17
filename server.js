@@ -10,9 +10,35 @@ app.use(cors());
 
 const server = http.createServer(app);
 
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname;
+
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      /^192\.168\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000"],
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin not allowed: ${origin}`));
+    },
     methods: ["GET", "POST"]
   }
 });
