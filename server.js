@@ -6,41 +6,67 @@ const cors = require("cors");
 const handleSocket = require("./socketHandler");
 
 const app = express();
-app.use(cors());
+function normalizeOrigin(origin) {
+  if (!origin) return "";
 
-const server = http.createServer(app);
+  try {
+    const parsed = new URL(origin);
+    return parsed.origin;
+  } catch {
+    return origin.trim().replace(/\/+$/, "");
+  }
+}
+
+const configuredOrigins = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((origin) => normalizeOrigin(origin.trim()))
+  .filter(Boolean);
+
+function isLocalOrigin(hostname) {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    /^192\.168\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  );
+}
 
 function isAllowedOrigin(origin) {
   if (!origin) return true;
 
-  try {
-    const parsed = new URL(origin);
-    const hostname = parsed.hostname;
+  const normalizedOrigin = normalizeOrigin(origin);
 
-    return (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      /^192\.168\./.test(hostname) ||
-      /^10\./.test(hostname) ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
-    );
+  if (configuredOrigins.includes(normalizedOrigin)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(normalizedOrigin);
+    return isLocalOrigin(parsed.hostname);
   } catch {
     return false;
   }
 }
 
-const io = new Server(server, {
-  cors: {
-    origin: (origin, callback) => {
-      if (isAllowedOrigin(origin)) {
-        callback(null, true);
-        return;
-      }
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
 
-      callback(new Error(`Origin not allowed: ${origin}`));
-    },
-    methods: ["GET", "POST"]
-  }
+    callback(new Error(`Origin not allowed: ${origin}`));
+  },
+  methods: ["GET", "POST"],
+};
+
+app.use(cors(corsOptions));
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: corsOptions
 });
 
 /* ---------------- SOCKET CONNECTION ---------------- */
