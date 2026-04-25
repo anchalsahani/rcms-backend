@@ -27,6 +27,7 @@ function createRoom(hostId, playerName, sessionId) {
     gameState: "playing",
     currentRound: 0,
     totalRounds: 5,
+    roundHistory: [],
 
     game: {
       mantriId: null,

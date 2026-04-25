@@ -58,6 +58,7 @@ function startGame(room) {
     state: "REVEAL",
     gameState: "playing",
     result: undefined,
+    roundHistory: room.roundHistory ?? [],
     game: {
       mantriId: mantri.id,
       chorId: chor.id
@@ -108,6 +109,20 @@ function handleGuess(room, guessedId) {
     };
   });
 
+  const roundHistoryEntry = {
+    roundNumber: room.currentRound,
+    guessedId,
+    chorId,
+    correct,
+    players: updatedPlayers.map((player) => ({
+      id: player.id,
+      name: player.name,
+      role: player.role,
+      roundScore: roundScores[player.id] ?? 0,
+      totalScore: player.score
+    }))
+  };
+
   const finalRound = room.currentRound >= room.totalRounds;
 
   return {
@@ -115,6 +130,7 @@ function handleGuess(room, guessedId) {
     players: updatedPlayers,
     state: finalRound ? "FINISHED" : "RESULT",
     gameState: finalRound ? "finalResult" : "roundResult",
+    roundHistory: [...(room.roundHistory ?? []), roundHistoryEntry],
     result: {
       correct,
       chorId,
